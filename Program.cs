@@ -43,6 +43,11 @@ namespace hashfs
                 path = args[0];
             }
 
+            if (args.Length == 2)
+            {
+                database = args[1];
+            }
+
             var cs = $@"URI=file:{database}";
 
             using var con = new SQLiteConnection(cs);

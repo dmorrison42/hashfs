@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data.SQLite;
 using System.IO;
 using System.Security.Cryptography;
@@ -48,6 +48,7 @@ namespace hashfs
             using var con = new SQLiteConnection(cs);
             con.Open();
             using var cmd = new SQLiteCommand(con);
+            if (args.Length == 1)
             {
                 path = args[0];
             }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data.SQLite;
 using System.IO;
 using System.Security.Cryptography;
@@ -55,6 +55,7 @@ namespace hashfs
             cmd.CommandText = @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)";
             cmd.ExecuteNonQuery();
 
+            long updateCount = 0;
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 var info = new System.IO.FileInfo(filePath);
@@ -77,6 +78,11 @@ namespace hashfs
                     cmd.Parameters.AddWithValue("@modified", modified);
                     cmd.Parameters.AddWithValue("@hash", hash);
                     cmd.ExecuteNonQuery();
+                    if (updateCount++ % 20 == 0)
+                    {
+                        con.Close();
+                        con.Open();
+                    }
                     System.Console.WriteLine($"{hash}, {modified}, {length}, {filePath}");
                 }
             };

@@ -38,12 +38,12 @@ namespace hashfs
         {
             var database = @".\hashes.db";
             var path = ".";
-            if (args.Length == 1)
+            if (args.Length >= 1)
             {
                 path = args[0];
             }
 
-            if (args.Length == 2)
+            if (args.Length >= 2)
             {
                 database = args[1];
             }

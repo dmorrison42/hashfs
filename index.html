@@ -1,0 +1,47 @@
+<head>
+    <script src="//unpkg.com/d3"></script>
+    <script src="//unpkg.com/treemap-chart"></script>
+
+    <style>
+        body {
+            margin: 0
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chart"></div>
+</body>
+<script>
+
+    function fetchJSONFile(path, callback) {
+        var httpRequest = new XMLHttpRequest();
+        httpRequest.onreadystatechange = function () {
+            if (httpRequest.readyState === 4) {
+                if (httpRequest.status === 200) {
+                    var data = JSON.parse(httpRequest.responseText);
+                    if (callback) callback(data);
+                }
+            }
+        };
+        httpRequest.open('GET', path);
+        httpRequest.send();
+    }
+
+    // this requests the file and executes a callback with the parsed result once
+    //   it is available
+    fetchJSONFile('out.json', function (data) {
+        const MAX_VALUE = 10
+
+        const color = d3.scaleOrdinal(d3.schemePaired);
+
+        Treemap()
+            .data(data)
+            .color(d => color(d.name))
+            .showLabels(false)
+            .minBlockArea(500)
+            .excludeRoot(true)
+            .tooltipContent((d, node) => `Size: <i>${node.value}</i>`)
+            (document.getElementById('chart'));
+    });
+</script>

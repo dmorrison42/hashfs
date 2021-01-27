@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Linq;
 using System.Data.SQLite;
 using System.IO;
 using System.Security.Cryptography;
+
+using Newtonsoft.Json.Linq;
 
 namespace hashfs
 {
@@ -34,10 +37,74 @@ namespace hashfs
             }
         }
 
+        static JObject ToJson(string path)
+        {
+            var obj = JObject.FromObject(new
+            {
+                name = ".",
+                children = new JArray(),
+            });
+
+            using var con = new SQLiteConnection($@"URI=file:{path}");
+            con.Open();
+
+            using var cmd = new SQLiteCommand(con);
+
+            cmd.CommandText = @"SELECT * FROM files";
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var filePath = reader.GetString(0);
+                var segments = filePath.Split(new char[] { '\\', '/' });
+                var siblings = (JArray)obj["children"];
+
+                foreach (var segment in segments.Take(segments.Length - 1))
+                {
+                    while (true)
+                    {
+                        var next = siblings.FirstOrDefault(s => s["name"].ToObject<string>() == segment);
+                        if (next == null)
+                        {
+                            siblings.Add(JObject.FromObject(new
+                            {
+                                name = segment,
+                                children = new JArray(),
+                            }));
+                        }
+                        else
+                        {
+                            siblings = (JArray)next["children"];
+                            break;
+                        }
+                    }
+                }
+                siblings.Add(JObject.FromObject(new
+                {
+                    // Modified = reader.GetString(2),
+                    name = segments.Last(),
+                    value = reader.GetInt64(1),
+                }));
+            }
+
+            return obj;
+        }
+
         static void Main(string[] args)
         {
             var database = @".\hashes.db";
             var path = ".";
+
+            if (args[0] == "--tojson")
+            {
+                if (args.Length >= 2)
+                {
+                    database = args[1];
+                }
+                Console.WriteLine(ToJson(database).ToString());
+                return;
+            }
+
             if (args.Length >= 1)
             {
                 path = args[0];

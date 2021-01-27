@@ -60,7 +60,7 @@ namespace hashfs
             cmd.CommandText = @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)";
             cmd.ExecuteNonQuery();
 
-            long updateCount = 0;
+            long fileCount = 0;
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 var info = new System.IO.FileInfo(filePath);
@@ -73,6 +73,11 @@ namespace hashfs
                 using var reader = cmd.ExecuteReader();
                 reader.Read();
 
+                if (fileCount++ % 100 == 0)
+                {
+                    Console.WriteLine(fileCount);
+                }
+
                 if (!reader.HasRows || filePath != reader.GetString(0) || length != reader.GetInt64(1) || modified != reader.GetString(2))
                 {
                     reader.Close();
@@ -83,11 +88,6 @@ namespace hashfs
                     cmd.Parameters.AddWithValue("@modified", modified);
                     cmd.Parameters.AddWithValue("@hash", hash);
                     cmd.ExecuteNonQuery();
-                    if (updateCount++ % 20 == 0)
-                    {
-                        con.Close();
-                        con.Open();
-                    }
                     System.Console.WriteLine($"{hash}, {modified}, {length}, {filePath}");
                 }
             };

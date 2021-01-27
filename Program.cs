@@ -81,6 +81,7 @@ namespace hashfs
                 if (!reader.HasRows || filePath != reader.GetString(0) || length != reader.GetInt64(1) || modified != reader.GetString(2))
                 {
                     reader.Close();
+                    System.Console.WriteLine($"{filePath}");
                     var hash = GetHash(filePath);
                     cmd.CommandText = "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)";
                     cmd.Parameters.AddWithValue("@path", filePath);
@@ -88,7 +89,7 @@ namespace hashfs
                     cmd.Parameters.AddWithValue("@modified", modified);
                     cmd.Parameters.AddWithValue("@hash", hash);
                     cmd.ExecuteNonQuery();
-                    System.Console.WriteLine($"{hash}, {modified}, {length}, {filePath}");
+                    System.Console.WriteLine($"{hash}, {modified}, {length}");
                 }
             };
         }

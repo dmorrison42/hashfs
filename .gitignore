@@ -1,6 +1,7 @@
 win
 osx
-hashes.db
+*.db
+out.json
 
 *.swp
 *.*~

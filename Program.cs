@@ -1,8 +1,10 @@
 ﻿using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 
 using Newtonsoft.Json.Linq;
 
@@ -95,7 +97,7 @@ namespace hashfs
             var database = @".\hashes.db";
             var path = ".";
 
-            if (args[0] == "--tojson")
+            if (args.Length >= 1 && args[0] == "--tojson")
             {
                 if (args.Length >= 2)
                 {
@@ -126,39 +128,60 @@ namespace hashfs
             }
             cmd.CommandText = @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)";
             cmd.ExecuteNonQuery();
+            var hungItems = new List<(string Path, Task Task)>();
 
             long fileCount = 0;
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
-                var info = new System.IO.FileInfo(filePath);
-                var length = info.Length;
-                var modified = info.LastWriteTime.ToString("o");
-
-                cmd.CommandText = @"SELECT * FROM files WHERE path=@path";
-                cmd.Parameters.AddWithValue("@path", filePath);
-
-                using var reader = cmd.ExecuteReader();
-                reader.Read();
-
-                if (fileCount++ % 100 == 0)
+                var task = Task.Run(() =>
                 {
-                    Console.WriteLine(fileCount);
-                }
+                    var info = new System.IO.FileInfo(filePath);
+                    var length = info.Length;
+                    var modified = info.LastWriteTime.ToString("o");
 
-                if (!reader.HasRows || filePath != reader.GetString(0) || length != reader.GetInt64(1) || modified != reader.GetString(2))
-                {
-                    reader.Close();
-                    System.Console.WriteLine($"{filePath}");
-                    var hash = GetHash(filePath);
-                    cmd.CommandText = "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)";
+                    cmd.CommandText = @"SELECT * FROM files WHERE path=@path";
                     cmd.Parameters.AddWithValue("@path", filePath);
-                    cmd.Parameters.AddWithValue("@size", length);
-                    cmd.Parameters.AddWithValue("@modified", modified);
-                    cmd.Parameters.AddWithValue("@hash", hash);
-                    cmd.ExecuteNonQuery();
-                    System.Console.WriteLine($"{hash}, {modified}, {length}");
+
+                    using var reader = cmd.ExecuteReader();
+                    reader.Read();
+
+                    if (fileCount++ % 100 == 0)
+                    {
+                        Console.WriteLine(fileCount - 1);
+                    }
+
+                    if (!reader.HasRows || filePath != reader.GetString(0) || length != reader.GetInt64(1) || modified != reader.GetString(2))
+                    {
+                        reader.Close();
+                        var hash = GetHash(filePath);
+                        cmd.CommandText = "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)";
+                        cmd.Parameters.AddWithValue("@path", filePath);
+                        cmd.Parameters.AddWithValue("@size", length);
+                        cmd.Parameters.AddWithValue("@modified", modified);
+                        cmd.Parameters.AddWithValue("@hash", hash);
+                        cmd.ExecuteNonQuery();
+                    };
+                });
+
+                task.Wait(1 * 60 * 1000);
+                if (!task.IsCompleted)
+                {
+                    hungItems.Add((filePath, task));
                 }
-            };
+
+                for (var i = hungItems.Count - 1; i >= 0; i--)
+                {
+                    var item = hungItems[i];
+                    if (item.Task.IsCompleted)
+                    {
+                        hungItems.RemoveAt(i);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"HUNG: {item.Path}");
+                    }
+                }
+            }
         }
     }
 }

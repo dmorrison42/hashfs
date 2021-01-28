@@ -1,4 +1,5 @@
-﻿using System;
+﻿using System.Security.AccessControl;
+using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
@@ -92,6 +93,33 @@ namespace hashfs
             return obj;
         }
 
+        static void RemoveMissing(string database)
+        {
+            using var con = new SQLiteConnection($@"URI=file:{database}");
+            con.Open();
+
+            using var cmd = new SQLiteCommand(con);
+
+            cmd.CommandText = @"SELECT path FROM files";
+
+            using var reader = cmd.ExecuteReader();
+            long entries = 0;
+            while (reader.Read())
+            {
+                if (entries++ % 100 == 0)
+                {
+                    Console.WriteLine(entries - 1);
+                }
+                var filePath = reader.GetString(0);
+                if (!File.Exists(filePath))
+                {
+                    var rmCmd = new SQLiteCommand("DELETE FROM files WHERE path = @path", con);
+                    rmCmd.Parameters.AddWithValue("@path", filePath);
+                    rmCmd.ExecuteNonQuery();
+                }
+            }
+        }
+
         static void Main(string[] args)
         {
             var database = @".\hashes.db";
@@ -182,6 +210,8 @@ namespace hashfs
                     }
                 }
             }
+
+            RemoveMissing(database);
         }
     }
 }

@@ -106,8 +106,7 @@ namespace hashfs
                     return true;
                 }).ToList();
 
-                hungMessage = runningItems.Count == 0 ? null
-                    : string.Join("\n", runningItems.Select(i => i.Path)) + "\n";
+                hungMessage = string.Join("", runningItems.Select(i => i.Path + "\n"));
 
                 for (var i = runningItems.Count - 1; i >= 0; i--)
                 {

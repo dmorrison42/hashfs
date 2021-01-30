@@ -1,4 +1,4 @@
-﻿using System.Security.AccessControl;
+﻿using System.Threading;
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
@@ -13,7 +13,6 @@ namespace hashfs
 {
     class Program
     {
-
         private static SHA256 Sha256 = SHA256.Create();
 
         private static string GetHash(string filename)
@@ -37,6 +36,120 @@ namespace hashfs
             catch
             {
                 return null;
+            }
+        }
+
+        static void InitializeDatabase(SQLiteConnection con)
+        {
+            using var cmd = new SQLiteCommand(con);
+            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)";
+            cmd.ExecuteNonQuery();
+        }
+
+        static Task<bool> ProcessPathAsync(SQLiteConnection con, string filePath)
+        {
+            return Task.Run<bool>(() =>
+            {
+                var info = new System.IO.FileInfo(filePath);
+                var length = info.Length;
+                var modified = info.LastWriteTime.ToString("o");
+
+                using var readCommand = new SQLiteCommand(@"SELECT * FROM files WHERE path=@path", con);
+                readCommand.Parameters.AddWithValue("@path", filePath);
+                using var reader = readCommand.ExecuteReader();
+                reader.Read();
+
+
+                if (reader.HasRows && filePath == reader.GetString(0) && length == reader.GetInt64(1) && modified == reader.GetString(2))
+                {
+                    return false;
+                }
+
+                var hash = GetHash(filePath);
+                using var cmd = new SQLiteCommand(
+                    "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)", con);
+                cmd.Parameters.AddWithValue("@path", filePath);
+                cmd.Parameters.AddWithValue("@size", length);
+                cmd.Parameters.AddWithValue("@modified", modified);
+                cmd.Parameters.AddWithValue("@hash", hash);
+                cmd.ExecuteNonQuery();
+                return true;
+            });
+        }
+
+        static void AddHashes(SQLiteConnection con, string path)
+        {
+            var waitTime = 60 * 1000;
+            var runningItems = new List<(string Path, Task Task)>();
+            string hungMessage = null;
+
+            Task.Run(() =>
+            {
+                while (true)
+                {
+                    Console.Write(hungMessage);
+                    Thread.Sleep(waitTime);
+                }
+            });
+
+            long fileCount = 0;
+            long hashCount = 0;
+            foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                var task = ProcessPathAsync(con, filePath);
+                task.Wait(waitTime);
+                runningItems.Add((filePath, task));
+                runningItems = runningItems.Where(i =>
+                {
+                    if (!task.IsCompleted) return false;
+                    if (task.Result) hashCount++;
+                    return true;
+                }).ToList();
+
+                hungMessage = runningItems.Count == 0 ? null
+                    : string.Join("\n", runningItems.Select(i => i.Path)) + "\n";
+
+                for (var i = runningItems.Count - 1; i >= 0; i--)
+                {
+                    var item = runningItems[i];
+                    if (item.Task.IsCompleted)
+                    {
+                        runningItems.RemoveAt(i);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"HUNG: {item.Path}");
+                    }
+                }
+
+                if (++fileCount % 100 == 0)
+                {
+                    Console.WriteLine($"{fileCount}:{hashCount}");
+                }
+            }
+        }
+
+        static void RemoveMissing(SQLiteConnection con)
+        {
+            using var cmd = new SQLiteCommand(con);
+
+            cmd.CommandText = @"SELECT path FROM files";
+
+            using var reader = cmd.ExecuteReader();
+            long entries = 0;
+            while (reader.Read())
+            {
+                if (++entries % 100 == 0)
+                {
+                    Console.WriteLine(entries);
+                }
+                var filePath = reader.GetString(0);
+                if (!File.Exists(filePath))
+                {
+                    var rmCmd = new SQLiteCommand("DELETE FROM files WHERE path = @path", con);
+                    rmCmd.Parameters.AddWithValue("@path", filePath);
+                    rmCmd.ExecuteNonQuery();
+                }
             }
         }
 
@@ -93,33 +206,6 @@ namespace hashfs
             return obj;
         }
 
-        static void RemoveMissing(string database)
-        {
-            using var con = new SQLiteConnection($@"URI=file:{database}");
-            con.Open();
-
-            using var cmd = new SQLiteCommand(con);
-
-            cmd.CommandText = @"SELECT path FROM files";
-
-            using var reader = cmd.ExecuteReader();
-            long entries = 0;
-            while (reader.Read())
-            {
-                if (entries++ % 100 == 0)
-                {
-                    Console.WriteLine(entries - 1);
-                }
-                var filePath = reader.GetString(0);
-                if (!File.Exists(filePath))
-                {
-                    var rmCmd = new SQLiteCommand("DELETE FROM files WHERE path = @path", con);
-                    rmCmd.Parameters.AddWithValue("@path", filePath);
-                    rmCmd.ExecuteNonQuery();
-                }
-            }
-        }
-
         static void Main(string[] args)
         {
             var database = @".\hashes.db";
@@ -135,83 +221,16 @@ namespace hashfs
                 return;
             }
 
-            if (args.Length >= 1)
-            {
-                path = args[0];
-            }
-
-            if (args.Length >= 2)
-            {
-                database = args[1];
-            }
+            if (args.Length >= 1) path = args[0];
+            if (args.Length >= 2) database = args[1];
 
             var cs = $@"URI=file:{database}";
 
             using var con = new SQLiteConnection(cs);
             con.Open();
-            using var cmd = new SQLiteCommand(con);
-            if (args.Length == 1)
-            {
-                path = args[0];
-            }
-            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)";
-            cmd.ExecuteNonQuery();
-            var hungItems = new List<(string Path, Task Task)>();
-
-            long fileCount = 0;
-            foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
-            {
-                var task = Task.Run(() =>
-                {
-                    var info = new System.IO.FileInfo(filePath);
-                    var length = info.Length;
-                    var modified = info.LastWriteTime.ToString("o");
-
-                    cmd.CommandText = @"SELECT * FROM files WHERE path=@path";
-                    cmd.Parameters.AddWithValue("@path", filePath);
-
-                    using var reader = cmd.ExecuteReader();
-                    reader.Read();
-
-                    if (fileCount++ % 100 == 0)
-                    {
-                        Console.WriteLine(fileCount - 1);
-                    }
-
-                    if (!reader.HasRows || filePath != reader.GetString(0) || length != reader.GetInt64(1) || modified != reader.GetString(2))
-                    {
-                        reader.Close();
-                        var hash = GetHash(filePath);
-                        cmd.CommandText = "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)";
-                        cmd.Parameters.AddWithValue("@path", filePath);
-                        cmd.Parameters.AddWithValue("@size", length);
-                        cmd.Parameters.AddWithValue("@modified", modified);
-                        cmd.Parameters.AddWithValue("@hash", hash);
-                        cmd.ExecuteNonQuery();
-                    };
-                });
-
-                task.Wait(1 * 60 * 1000);
-                if (!task.IsCompleted)
-                {
-                    hungItems.Add((filePath, task));
-                }
-
-                for (var i = hungItems.Count - 1; i >= 0; i--)
-                {
-                    var item = hungItems[i];
-                    if (item.Task.IsCompleted)
-                    {
-                        hungItems.RemoveAt(i);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"HUNG: {item.Path}");
-                    }
-                }
-            }
-
-            RemoveMissing(database);
+            InitializeDatabase(con);
+            AddHashes(con, path);
+            RemoveMissing(con);
         }
     }
 }

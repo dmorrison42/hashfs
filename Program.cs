@@ -46,9 +46,16 @@ namespace hashfs
             cmd.ExecuteNonQuery();
         }
 
-        static Task<bool> ProcessPathAsync(SQLiteConnection con, string filePath)
+        enum ProcessResult {
+            Cached,
+            NewlyHashed,
+            RehashedDueToSize,
+            RehashedDueToModifiedDate,
+        }
+
+        static Task<ProcessResult> ProcessPathAsync(SQLiteConnection con, string filePath)
         {
-            return Task.Run<bool>(() =>
+            return Task.Run<ProcessResult>(() =>
             {
                 var info = new System.IO.FileInfo(filePath);
                 var length = info.Length;
@@ -59,11 +66,14 @@ namespace hashfs
                 using var reader = readCommand.ExecuteReader();
                 reader.Read();
 
-
-                if (reader.HasRows && filePath == reader.GetString(0) && length == reader.GetInt64(1) && modified == reader.GetString(2))
-                {
-                    return false;
+                var sameLength = false;
+                var sameDate = false;
+                if (reader.HasRows) {
+                    sameLength = length == (int)reader["size"];
+                    sameDate = modified == (string)reader["modified"];
                 }
+
+                if (reader.HasRows && sameLength && sameDate) return ProcessResult.Cached;
 
                 var hash = GetHash(filePath);
                 using var cmd = new SQLiteCommand(
@@ -73,7 +83,10 @@ namespace hashfs
                 cmd.Parameters.AddWithValue("@modified", modified);
                 cmd.Parameters.AddWithValue("@hash", hash);
                 cmd.ExecuteNonQuery();
-                return true;
+
+                if (!sameLength) return ProcessResult.RehashedDueToSize;
+                if (!sameDate) return ProcessResult.RehashedDueToModifiedDate;
+                return ProcessResult.NewlyHashed;
             });
         }
 
@@ -93,7 +106,7 @@ namespace hashfs
             });
 
             long fileCount = 0;
-            long hashCount = 0;
+            var hashTypes = new long[] { 0, 0, 0, 0 };
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 var task = ProcessPathAsync(con, filePath);
@@ -102,7 +115,7 @@ namespace hashfs
                 runningItems = runningItems.Where(i =>
                 {
                     if (!task.IsCompleted) return false;
-                    if (task.Result) hashCount++;
+                    hashTypes[(int)task.Result] += 1;
                     return true;
                 }).ToList();
 
@@ -123,7 +136,7 @@ namespace hashfs
 
                 if (++fileCount % 100 == 0)
                 {
-                    Console.WriteLine($"{fileCount}:{hashCount}");
+                    Console.WriteLine($"{fileCount}:{string.Join(",", hashTypes)}");
                 }
             }
         }
@@ -207,6 +220,8 @@ namespace hashfs
 
         static void Main(string[] args)
         {
+            Console.WriteLine("HashFS v0.2");
+
             var database = @".\hashes.db";
             var path = ".";
 
@@ -229,6 +244,7 @@ namespace hashfs
             con.Open();
             InitializeDatabase(con);
             AddHashes(con, path);
+            Console.WriteLine("Hasing completed! Removing non-existing files from the database");
             RemoveMissing(con);
         }
     }

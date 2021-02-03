@@ -46,7 +46,8 @@ namespace hashfs
             cmd.ExecuteNonQuery();
         }
 
-        enum ProcessResult {
+        enum ProcessResult
+        {
             Cached,
             NewlyHashed,
             RehashedDueToSize,
@@ -68,7 +69,8 @@ namespace hashfs
 
                 var sameLength = false;
                 var sameDate = false;
-                if (reader.HasRows) {
+                if (reader.HasRows)
+                {
                     sameLength = length == (int)reader["size"];
                     sameDate = modified == (string)reader["modified"];
                 }
@@ -142,10 +144,27 @@ namespace hashfs
                     Console.WriteLine($"{fileCount}:{string.Join(",", hashTypes)}");
                 }
             }
+            Console.WriteLine("Waiting at the end");
+            Task.WaitAll(runningItems.Select(r => r.Task).ToArray());
         }
 
         static void RemoveMissing(SQLiteConnection con)
         {
+            Task<bool> CleanPathAsync(string path)
+            {
+                return Task.Run(() =>
+                {
+                    if (File.Exists(path)) return false;
+
+                    var rmCmd = new SQLiteCommand("DELETE FROM files WHERE path = @path", con);
+                    rmCmd.Parameters.AddWithValue("@path", path);
+                    rmCmd.ExecuteNonQuery();
+                    return true;
+                });
+            }
+
+            var waitTime = 60 * 1000;
+            var runningItems = new List<(string Path, Task Task)>();
             using var cmd = new SQLiteCommand(con);
 
             cmd.CommandText = @"SELECT path FROM files";
@@ -154,18 +173,28 @@ namespace hashfs
             long entries = 0;
             while (reader.Read())
             {
+                var filePath = reader.GetString(0);
+                runningItems.Add((filePath, CleanPathAsync(filePath)));
+                if (runningItems.Count > 3)
+                {
+                    Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
+                }
+
+                for (var i = runningItems.Count - 1; i >= 0; i--)
+                {
+                    var item = runningItems[i];
+                    if (item.Task.IsCompleted)
+                    {
+                        runningItems.RemoveAt(i);
+                    }
+                }
+
                 if (++entries % 100 == 0)
                 {
                     Console.WriteLine(entries);
                 }
-                var filePath = reader.GetString(0);
-                if (!File.Exists(filePath))
-                {
-                    var rmCmd = new SQLiteCommand("DELETE FROM files WHERE path = @path", con);
-                    rmCmd.Parameters.AddWithValue("@path", filePath);
-                    rmCmd.ExecuteNonQuery();
-                }
             }
+            Task.WaitAll(runningItems.Select(r => r.Task).ToArray());
         }
 
         static JObject ToJson(string path)

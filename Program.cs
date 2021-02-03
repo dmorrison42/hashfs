@@ -97,8 +97,11 @@ namespace hashfs
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 var task = ProcessPathAsync(con, filePath);
-                task.Wait(waitTime);
                 runningItems.Add((filePath, task));
+                if (runningItems.Count > 3)
+                {
+                    Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
+                }
                 runningItems = runningItems.Where(i =>
                 {
                     if (!task.IsCompleted) return false;

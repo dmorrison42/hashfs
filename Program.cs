@@ -160,7 +160,7 @@ namespace hashfs
                 fileCount++;
                 if (watch.Elapsed.TotalSeconds > 10)
                 {
-                    Console.WriteLine($"Processed: {fileCount}: " + " ".Join(hashTypes.Select(i => i.ToString)));
+                    Console.WriteLine($"Processed: {fileCount}: " + string.Join(" ", hashTypes.Select(i => i.ToString())));
                     watch.Restart();
                 }
             }

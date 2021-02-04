@@ -160,13 +160,13 @@ namespace hashfs
                 fileCount++;
                 if (watch.Elapsed.TotalSeconds > 10)
                 {
-                    Console.WriteLine($"Read: {Math.Floor(fileCount / 100d) * 100}");
+                    Console.WriteLine($"Processed: {fileCount}: " + " ".Join(hashTypes.Select(i => i.ToString)));
                     watch.Restart();
                 }
             }
             Task.WaitAll(runningItems.Select(r => r.Task).ToArray());
             // TODO: This number may be off a little
-            Console.WriteLine($"Read(ish): {fileCount}");
+            Console.WriteLine($"Processed(ish): {fileCount}");
         }
 
         static void RemovePaths(SQLiteConnection con, IReadOnlyList<string> paths)

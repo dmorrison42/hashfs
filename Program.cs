@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using System.Diagnostics;
+using System.Collections.Concurrent;
 using System.Threading;
 using System;
 using System.Collections.Generic;
@@ -57,6 +58,7 @@ namespace hashfs
 
         static IDictionary<string, (long Size, string Modified)> ReadDatabase(SQLiteConnection con)
         {
+            var watch = Stopwatch.StartNew();
             var result = new ConcurrentDictionary<string, (long, string)>();
             using var cmd = new SQLiteCommand(@"SELECT path, size, modified FROM files", con);
 
@@ -66,9 +68,11 @@ namespace hashfs
             while (reader.Read())
             {
                 result[(string)reader["path"]] = ((long)reader.GetInt64(1), (string)reader["modified"]);
-                if (++entries % 10000 == 0)
+                entries++;
+                if (watch.Elapsed.TotalSeconds > 10)
                 {
-                    Console.WriteLine($"Read: {entries}");
+                    Console.WriteLine($"Read: {Math.Floor(entries / 1000d) * 1000}");
+                    watch.Restart();
                 }
             }
             Console.WriteLine($"Read: {result.Count}");
@@ -114,6 +118,7 @@ namespace hashfs
 
         static void AddHashes(SQLiteConnection con, string path, IDictionary<string, (long Size, string Modified)> cache)
         {
+            var watch = Stopwatch.StartNew();
             var waitTime = 60 * 1000;
             var runningItems = new List<(string Path, Task Task)>();
             string hungMessage = null;
@@ -132,10 +137,13 @@ namespace hashfs
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 var task = ProcessPathAsync(con, filePath, cache);
-                runningItems.Add((filePath, task));
                 if (runningItems.Count > 3)
                 {
                     Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
+                }
+                else
+                {
+                    runningItems.Add((filePath, task));
                 }
 
                 for (var i = runningItems.Count - 1; i >= 0; i--)
@@ -148,19 +156,23 @@ namespace hashfs
                     }
                 }
 
-                hungMessage = string.Join("", runningItems.Select(i => i.Path + "\n"));
+                hungMessage = string.Join("", runningItems.Select(i => $"Running Item: {i.Path}\n"));
 
-                if (++fileCount % 100 == 0)
+                fileCount++;
+                if (watch.Elapsed.TotalSeconds > 10)
                 {
-                    Console.WriteLine($"{fileCount}:{string.Join(",", hashTypes)}");
+                    Console.WriteLine($"Read: {Math.Floor(fileCount / 100d) * 100}");
+                    watch.Restart();
                 }
             }
-            Console.WriteLine("Waiting at the end");
             Task.WaitAll(runningItems.Select(r => r.Task).ToArray());
+            // TODO: This number may be off a little
+            Console.WriteLine($"Read(ish): {fileCount}");
         }
 
         static void RemovePaths(SQLiteConnection con, IReadOnlyList<string> paths)
         {
+            var watch = Stopwatch.StartNew();
             Console.WriteLine($"Removing: {paths.Count}");
             long entries = 0;
             foreach (var path in paths)
@@ -169,9 +181,11 @@ namespace hashfs
                 rmCmd.Parameters.AddWithValue("@path", path);
                 rmCmd.ExecuteNonQuery();
 
-                if (++entries % 100 == 0)
+                entries++;
+                if (watch.Elapsed.TotalSeconds > 10)
                 {
-                    Console.WriteLine($"Removed: {entries} / {paths.Count}");
+                    Console.WriteLine($"Removed: {Math.Floor(entries / 100d) * 100} / {paths.Count}");
+                    watch.Restart();
                 }
             }
         }
@@ -257,7 +271,6 @@ namespace hashfs
             var cache = ReadDatabase(con);
             // Impure shenanigans, need to move this to a class
             AddHashes(con, path, cache);
-            Console.WriteLine("Hasing completed! Removing non-existing files from the database");
             RemovePaths(con, cache.Keys.ToArray());
         }
     }

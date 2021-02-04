@@ -244,7 +244,7 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.0");
+            Console.WriteLine("HashFS v0.3.1");
 
             var database = @".\hashes.db";
             var path = ".";

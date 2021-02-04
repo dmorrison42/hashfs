@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Collections.Concurrent;
 using System.Threading;
 using System;
 using System.Collections.Generic;
@@ -59,7 +58,7 @@ namespace hashfs
         static IDictionary<string, (long Size, string Modified)> ReadDatabase(SQLiteConnection con)
         {
             var watch = Stopwatch.StartNew();
-            var result = new ConcurrentDictionary<string, (long, string)>();
+            var result = new Dictionary<string, (long, string)>();
             using var cmd = new SQLiteCommand(@"SELECT path, size, modified FROM files", con);
 
 

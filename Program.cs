@@ -55,9 +55,9 @@ namespace hashfs
             cmd.ExecuteNonQuery();
         }
 
-        static IDictionary<string, (int Size, string Modified)> ReadDatabase(SQLiteConnection con)
+        static IDictionary<string, (long Size, string Modified)> ReadDatabase(SQLiteConnection con)
         {
-            var result = new ConcurrentDictionary<string, (int, string)>();
+            var result = new ConcurrentDictionary<string, (long, string)>();
             using var cmd = new SQLiteCommand(@"SELECT path, size, modified FROM files", con);
 
 
@@ -65,8 +65,8 @@ namespace hashfs
             long entries = 0;
             while (reader.Read())
             {
-                result[(string)reader["path"]] = ((int)reader["size"], (string)reader["modified"]);
-                if (++entries % 100 == 0)
+                result[(string)reader["path"]] = ((long)reader.GetInt64(1), (string)reader["modified"]);
+                if (++entries % 10000 == 0)
                 {
                     Console.WriteLine($"Read: {entries}");
                 }
@@ -75,7 +75,7 @@ namespace hashfs
             return result;
         }
 
-        static Task<ProcessResult> ProcessPathAsync(SQLiteConnection con, string filePath, IDictionary<string, (int Size, string Modified)> cache)
+        static Task<ProcessResult> ProcessPathAsync(SQLiteConnection con, string filePath, IDictionary<string, (long Size, string Modified)> cache)
         {
             return Task.Run<ProcessResult>(() =>
             {
@@ -94,6 +94,7 @@ namespace hashfs
                     sameLength = length == cachedInfo.Size;
                     sameDate = modified == cachedInfo.Modified;
                     if (sameLength && sameDate) return ProcessResult.Cached;
+                    Console.WriteLine($"Cache Miss {filePath} ({sameLength}, {sameDate}) {cachedInfo.Modified}  {cachedInfo.Size}");
                 }
 
                 var hash = GetHash(filePath);
@@ -111,7 +112,7 @@ namespace hashfs
             });
         }
 
-        static void AddHashes(SQLiteConnection con, string path, IDictionary<string, (int Size, string Modified)> cache)
+        static void AddHashes(SQLiteConnection con, string path, IDictionary<string, (long Size, string Modified)> cache)
         {
             var waitTime = 60 * 1000;
             var runningItems = new List<(string Path, Task Task)>();

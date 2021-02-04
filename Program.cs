@@ -126,7 +126,11 @@ namespace hashfs
             {
                 while (true)
                 {
-                    Console.Write(hungMessage);
+                    if (hungMessage != null)
+                    {
+                        Console.WriteLine(runningItems.Count());
+                        Console.Write(hungMessage);
+                    }
                     Thread.Sleep(waitTime);
                 }
             });
@@ -164,6 +168,7 @@ namespace hashfs
                     watch.Restart();
                 }
             }
+            Console.WriteLine("Processing Final Files");
             Task.WaitAll(runningItems.Select(r => r.Task).ToArray());
             // TODO: This number may be off a little
             Console.WriteLine($"Processed(ish): {fileCount}");

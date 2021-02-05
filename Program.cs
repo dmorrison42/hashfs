@@ -119,7 +119,7 @@ namespace hashfs
         {
             var watch = Stopwatch.StartNew();
             var waitTime = 60 * 1000;
-            var runningItems = new List<(string Path, Task Task)>();
+            var runningItems = new List<(string Path, Task<ProcessResult> Task)>();
             string hungMessage = null;
 
             Task.Run(() =>
@@ -150,7 +150,7 @@ namespace hashfs
                     var item = runningItems[i];
                     if (item.Task.IsCompleted)
                     {
-                        hashTypes[(int)task.Result] += 1;
+                        hashTypes[(int)item.Task.Result] += 1;
                         runningItems.RemoveAt(i);
                     }
                 }

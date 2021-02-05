@@ -139,14 +139,10 @@ namespace hashfs
             var hashTypes = new long[] { 0, 0, 0, 0 };
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
-                var task = ProcessPathAsync(con, filePath, cache);
+                runningItems.Add((filePath, ProcessPathAsync(con, filePath, cache)));
                 if (runningItems.Count > 3)
                 {
                     Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
-                }
-                else
-                {
-                    runningItems.Add((filePath, task));
                 }
 
                 for (var i = runningItems.Count - 1; i >= 0; i--)

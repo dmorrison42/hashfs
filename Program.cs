@@ -157,13 +157,25 @@ namespace hashfs
             var hashTypes = new long[] { 0, 0, 0, 0, 0 };
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
-                if (runningItems.Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime).Count() >= 5)
+                while (true)
                 {
-                    Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
-                    var workers = runningItems.Where(i => !i.Task.IsCompleted).Count();
-                    if (workers > 1)
+                    var active = runningItems
+                        .Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime)
+                        .Select(i => i.Task)
+                        .Where(t => !t.IsCompleted)
+                        .ToArray();
+                    if (active.Length <= 5)
                     {
-                        Console.WriteLine($"Timed out waiting for worker ({runningItems.Count} workers).");
+                        break;
+                    }
+                    if (Task.WaitAny(active, waitTime) == -1)
+                    {
+                        var workers = active.Where(t => !t.IsCompleted).Count();
+                        if (workers > 1)
+                        {
+                            Console.WriteLine($"Timed out waiting for worker ({runningItems.Count} workers).");
+                            break;
+                        }
                     }
                 }
 
@@ -278,7 +290,7 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.5");
+            Console.WriteLine("HashFS v0.3.6");
 
             var database = @".\hashes.db";
             var path = ".";

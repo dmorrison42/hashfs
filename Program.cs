@@ -111,8 +111,6 @@ namespace hashfs
 
                 if (Cache.Remove(filePath, out var cachedInfo))
                 {
-                    // TODO: Make this impure magic clearer
-                    Console.WriteLine($"{Cache.Count}");
                     sameLength = length == cachedInfo.Size;
                     sameDate = modified == cachedInfo.Modified;
                     if (sameLength && sameDate) return ProcessResult.Cached;
@@ -162,20 +160,23 @@ namespace hashfs
             {
                 if (runningItems.Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime).Count() < 3)
                 {
-                    runningItems.Add((filePath, Stopwatch.StartNew(), Task.Run(async () =>
-                    {
-                        var result = await ProcessPathAsync(con, filePath);
-                        lock (hashTypes)
-                        {
-                            hashTypes[(int)result] += 1;
-                            fileCount++;
-                        }
-                    })));
-                }
-                else
-                {
                     Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
+                    var workers = runningItems.Where(i => !i.Task.IsCompleted).Count();
+                    if (workers > 1)
+                    {
+                        Console.WriteLine($"Timed out waiting for worker ({runningItems.Count} workers).");
+                    }
                 }
+
+                runningItems.Add((filePath, Stopwatch.StartNew(), Task.Run(async () =>
+                {
+                    var result = await ProcessPathAsync(con, filePath);
+                    lock (hashTypes)
+                    {
+                        hashTypes[(int)result] += 1;
+                        fileCount++;
+                    }
+                })));
 
                 for (var i = runningItems.Count - 1; i >= 0; i--)
                 {
@@ -278,7 +279,7 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.2");
+            Console.WriteLine("HashFS v0.3.3");
 
             var database = @".\hashes.db";
             var path = ".";

@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Threading;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
@@ -83,11 +84,17 @@ namespace hashfs
         {
             return Task.Run<ProcessResult>(() =>
             {
-                var info = new System.IO.FileInfo(filePath);
+                var fileInfoTask = Task.Run(() => new System.IO.FileInfo(filePath));
+                if (!fileInfoTask.Wait(30 * 1000))
+                {
+                    Console.WriteLine($"Stuck Getting File Info: {filePath}");
+                }
+                var info = fileInfoTask.Result;
                 var length = info.Length;
                 var modified = info.LastWriteTime.ToString("o");
 
-                void InsertHash(string hash) {
+                void InsertHash(string hash)
+                {
                     using var cmd = new SQLiteCommand(
                         "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)", con);
                     cmd.Parameters.AddWithValue("@path", filePath);
@@ -97,13 +104,9 @@ namespace hashfs
                     cmd.ExecuteNonQuery();
                 }
 
-                if (length == 0) {
-                    InsertHash("");
-                    return ProcessResult.ZeroLength;
-                }
-
-                var sameLength = false;
-                var sameDate = false;
+                // Don't trigger length or date failures unless it's cached
+                var sameLength = true;
+                var sameDate = true;
 
                 if (cache.ContainsKey(filePath))
                 {
@@ -113,7 +116,13 @@ namespace hashfs
                     sameLength = length == cachedInfo.Size;
                     sameDate = modified == cachedInfo.Modified;
                     if (sameLength && sameDate) return ProcessResult.Cached;
-                    Console.WriteLine($"Cache Miss {filePath} ({sameLength}, {sameDate}) {cachedInfo.Modified}  {cachedInfo.Size}");
+                    Console.WriteLine($"Cache Miss {filePath} ({cachedInfo.Size}: {(sameLength ? "same" : "different")}, {cachedInfo.Modified}: {(sameDate ? "same" : "different")})");
+                }
+
+                if (length == 0)
+                {
+                    InsertHash("");
+                    return ProcessResult.ZeroLength;
                 }
 
                 InsertHash(GetHash(filePath));
@@ -128,17 +137,20 @@ namespace hashfs
         {
             var watch = Stopwatch.StartNew();
             var waitTime = 60 * 1000;
-            var runningItems = new List<(string Path, Task<ProcessResult> Task)>();
-            string hungMessage = null;
+            var maxWaitTime = 5 * 60 * 1000;
+            var runningItems = new List<(string Path, Stopwatch Stopwatch, Task Task)>();
 
             Task.Run(() =>
             {
                 while (true)
                 {
-                    if (hungMessage != null)
+                    var items = runningItems.ToArray();
+                    foreach (var item in items)
                     {
-                        Console.WriteLine(runningItems.Count());
-                        Console.Write(hungMessage);
+                        if (item.Stopwatch.Elapsed.TotalSeconds > waitTime)
+                        {
+                            Console.WriteLine($"Running ({item.Stopwatch.Elapsed}): {item.Path}");
+                        }
                     }
                     Thread.Sleep(waitTime);
                 }
@@ -148,8 +160,19 @@ namespace hashfs
             var hashTypes = new long[] { 0, 0, 0, 0, 0 };
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
-                runningItems.Add((filePath, ProcessPathAsync(con, filePath, cache)));
-                if (runningItems.Count > 3)
+                if (runningItems.Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime).Count() < 3)
+                {
+                    runningItems.Add((filePath, Stopwatch.StartNew(), Task.Run(async () =>
+                    {
+                        var result = await ProcessPathAsync(con, filePath, cache);
+                        lock (hashTypes)
+                        {
+                            hashTypes[(int)result] += 1;
+                            fileCount++;
+                        }
+                    })));
+                }
+                else
                 {
                     Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
                 }
@@ -159,14 +182,16 @@ namespace hashfs
                     var item = runningItems[i];
                     if (item.Task.IsCompleted)
                     {
-                        hashTypes[(int)item.Task.Result] += 1;
+                        // Times estimated, should be within seconds
+                        item.Stopwatch.Stop();
+                        if (item.Stopwatch.Elapsed.TotalSeconds > waitTime)
+                        {
+                            Console.WriteLine($"Finished ({item.Stopwatch.Elapsed}): {item.Path}");
+                        }
                         runningItems.RemoveAt(i);
                     }
                 }
 
-                hungMessage = string.Join("", runningItems.Select(i => $"Running Item: {i.Path}\n"));
-
-                fileCount++;
                 if (watch.Elapsed.TotalSeconds > 10)
                 {
                     Console.WriteLine($"Processed: {fileCount}: " + string.Join(" ", hashTypes.Select(i => i.ToString())));
@@ -175,8 +200,7 @@ namespace hashfs
             }
             Console.WriteLine("Processing Final Files");
             Task.WaitAll(runningItems.Select(r => r.Task).ToArray());
-            // TODO: This number may be off a little
-            Console.WriteLine($"Processed(ish): {fileCount}");
+            Console.WriteLine($"Processed: {fileCount}: " + string.Join(" ", hashTypes.Select(i => i.ToString())));
         }
 
         static void RemovePaths(SQLiteConnection con, IReadOnlyList<string> paths)
@@ -193,7 +217,7 @@ namespace hashfs
                 entries++;
                 if (watch.Elapsed.TotalSeconds > 10)
                 {
-                    Console.WriteLine($"Removed: {Math.Floor(entries / 100d) * 100} / {paths.Count}");
+                    Console.WriteLine($"Removed: {entries} / {paths.Count}");
                     watch.Restart();
                 }
             }
@@ -277,8 +301,8 @@ namespace hashfs
             using var con = new SQLiteConnection(cs);
             con.Open();
             InitializeDatabase(con);
-            var cache = ReadDatabase(con);
             // Impure shenanigans, need to move this to a class
+            var cache = new ConcurrentDictionary<string, (long, string)>(ReadDatabase(con));
             AddHashes(con, path, cache);
             RemovePaths(con, cache.Keys.ToArray());
         }

@@ -80,7 +80,8 @@ namespace hashfs
             return result;
         }
 
-        static Task<ProcessResult> ProcessPathAsync(SQLiteConnection con, string filePath, IDictionary<string, (long Size, string Modified)> cache)
+        static ConcurrentDictionary<string, (long Size, string Modified)> Cache;
+        static Task<ProcessResult> ProcessPathAsync(SQLiteConnection con, string filePath)
         {
             return Task.Run<ProcessResult>(() =>
             {
@@ -108,11 +109,10 @@ namespace hashfs
                 var sameLength = true;
                 var sameDate = true;
 
-                if (cache.ContainsKey(filePath))
+                if (Cache.Remove(filePath, out var cachedInfo))
                 {
-                    var cachedInfo = cache[filePath];
                     // TODO: Make this impure magic clearer
-                    cache.Remove(filePath);
+                    Console.WriteLine($"{Cache.Count}");
                     sameLength = length == cachedInfo.Size;
                     sameDate = modified == cachedInfo.Modified;
                     if (sameLength && sameDate) return ProcessResult.Cached;
@@ -133,7 +133,7 @@ namespace hashfs
             });
         }
 
-        static void AddHashes(SQLiteConnection con, string path, IDictionary<string, (long Size, string Modified)> cache)
+        static void AddHashes(SQLiteConnection con, string path)
         {
             var watch = Stopwatch.StartNew();
             var waitTime = 60 * 1000;
@@ -164,7 +164,7 @@ namespace hashfs
                 {
                     runningItems.Add((filePath, Stopwatch.StartNew(), Task.Run(async () =>
                     {
-                        var result = await ProcessPathAsync(con, filePath, cache);
+                        var result = await ProcessPathAsync(con, filePath);
                         lock (hashTypes)
                         {
                             hashTypes[(int)result] += 1;
@@ -301,10 +301,9 @@ namespace hashfs
             using var con = new SQLiteConnection(cs);
             con.Open();
             InitializeDatabase(con);
-            // Impure shenanigans, need to move this to a class
-            var cache = new ConcurrentDictionary<string, (long, string)>(ReadDatabase(con));
-            AddHashes(con, path, cache);
-            RemovePaths(con, cache.Keys.ToArray());
+            Cache = new ConcurrentDictionary<string, (long, string)>(ReadDatabase(con));
+            AddHashes(con, path);
+            RemovePaths(con, Cache.Keys.ToArray());
         }
     }
 }

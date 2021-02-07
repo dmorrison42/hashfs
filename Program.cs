@@ -157,7 +157,7 @@ namespace hashfs
             var hashTypes = new long[] { 0, 0, 0, 0, 0 };
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
-                if (runningItems.Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime).Count() < 3)
+                if (runningItems.Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime).Count() >= 5)
                 {
                     Task.WaitAny(runningItems.Select(r => r.Task).ToArray(), waitTime);
                     var workers = runningItems.Where(i => !i.Task.IsCompleted).Count();
@@ -278,7 +278,7 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.4");
+            Console.WriteLine("HashFS v0.3.5");
 
             var database = @".\hashes.db";
             var path = ".";

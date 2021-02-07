@@ -114,7 +114,6 @@ namespace hashfs
                     sameLength = length == cachedInfo.Size;
                     sameDate = modified == cachedInfo.Modified;
                     if (sameLength && sameDate) return ProcessResult.Cached;
-                    Console.WriteLine($"Cache Miss {filePath} ({cachedInfo.Size}: {(sameLength ? "same" : "different")}, {cachedInfo.Modified}: {(sameDate ? "same" : "different")})");
                 }
 
                 if (length == 0)
@@ -279,7 +278,7 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.3");
+            Console.WriteLine("HashFS v0.3.4");
 
             var database = @".\hashes.db";
             var path = ".";

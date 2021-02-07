@@ -46,6 +46,7 @@ namespace hashfs
             NewlyHashed,
             RehashedDueToSize,
             RehashedDueToModifiedDate,
+            ZeroLength,
         }
 
         static void InitializeDatabase(SQLiteConnection con)
@@ -86,6 +87,21 @@ namespace hashfs
                 var length = info.Length;
                 var modified = info.LastWriteTime.ToString("o");
 
+                void InsertHash(string hash) {
+                    using var cmd = new SQLiteCommand(
+                        "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)", con);
+                    cmd.Parameters.AddWithValue("@path", filePath);
+                    cmd.Parameters.AddWithValue("@size", length);
+                    cmd.Parameters.AddWithValue("@modified", modified);
+                    cmd.Parameters.AddWithValue("@hash", hash);
+                    cmd.ExecuteNonQuery();
+                }
+
+                if (length == 0) {
+                    InsertHash("");
+                    return ProcessResult.ZeroLength;
+                }
+
                 var sameLength = false;
                 var sameDate = false;
 
@@ -100,14 +116,7 @@ namespace hashfs
                     Console.WriteLine($"Cache Miss {filePath} ({sameLength}, {sameDate}) {cachedInfo.Modified}  {cachedInfo.Size}");
                 }
 
-                var hash = GetHash(filePath);
-                using var cmd = new SQLiteCommand(
-                    "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)", con);
-                cmd.Parameters.AddWithValue("@path", filePath);
-                cmd.Parameters.AddWithValue("@size", length);
-                cmd.Parameters.AddWithValue("@modified", modified);
-                cmd.Parameters.AddWithValue("@hash", hash);
-                cmd.ExecuteNonQuery();
+                InsertHash(GetHash(filePath));
 
                 if (!sameLength) return ProcessResult.RehashedDueToSize;
                 if (!sameDate) return ProcessResult.RehashedDueToModifiedDate;
@@ -136,7 +145,7 @@ namespace hashfs
             });
 
             long fileCount = 0;
-            var hashTypes = new long[] { 0, 0, 0, 0 };
+            var hashTypes = new long[] { 0, 0, 0, 0, 0 };
             foreach (var filePath in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
             {
                 runningItems.Add((filePath, ProcessPathAsync(con, filePath, cache)));
@@ -245,7 +254,7 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.1");
+            Console.WriteLine("HashFS v0.3.2");
 
             var database = @".\hashes.db";
             var path = ".";

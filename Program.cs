@@ -290,8 +290,6 @@ namespace hashfs
 
         static void Main(string[] args)
         {
-            Console.WriteLine("HashFS v0.3.6");
-
             var database = @".\hashes.db";
             var path = ".";
 
@@ -304,6 +302,9 @@ namespace hashfs
                 Console.WriteLine(ToJson(database).ToString());
                 return;
             }
+
+            // Don't log out version if we're trying to make parsable json
+            Console.WriteLine("HashFS v0.3.7");
 
             if (args.Length >= 1) path = args[0];
             if (args.Length >= 2) database = args[1];

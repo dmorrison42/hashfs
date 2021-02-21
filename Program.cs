@@ -3,7 +3,7 @@ using System.Threading;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -50,18 +50,19 @@ namespace hashfs
             ZeroLength,
         }
 
-        static void InitializeDatabase(SQLiteConnection con)
+        static void InitializeDatabase(SqliteConnection con)
         {
-            using var cmd = new SQLiteCommand(con);
-            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)";
+            using var cmd = new SqliteCommand(
+                @"CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, size INT, modified TEXT, hash TEXT)",
+                con);
             cmd.ExecuteNonQuery();
         }
 
-        static IDictionary<string, (long Size, string Modified)> ReadDatabase(SQLiteConnection con)
+        static IDictionary<string, (long Size, string Modified)> ReadDatabase(SqliteConnection con)
         {
             var watch = Stopwatch.StartNew();
             var result = new Dictionary<string, (long, string)>();
-            using var cmd = new SQLiteCommand(@"SELECT path, size, modified FROM files", con);
+            using var cmd = new SqliteCommand(@"SELECT path, size, modified FROM files", con);
 
 
             using var reader = cmd.ExecuteReader();
@@ -81,7 +82,7 @@ namespace hashfs
         }
 
         static ConcurrentDictionary<string, (long Size, string Modified)> Cache;
-        static Task<ProcessResult> ProcessPathAsync(SQLiteConnection con, string filePath)
+        static Task<ProcessResult> ProcessPathAsync(SqliteConnection con, string filePath)
         {
             return Task.Run<ProcessResult>(() =>
             {
@@ -96,12 +97,12 @@ namespace hashfs
 
                 void InsertHash(string hash)
                 {
-                    using var cmd = new SQLiteCommand(
+                    using var cmd = new SqliteCommand(
                         "INSERT OR REPLACE INTO files(path, size, modified, hash) VALUES(@path, @size, @modified, @hash)", con);
                     cmd.Parameters.AddWithValue("@path", filePath);
                     cmd.Parameters.AddWithValue("@size", length);
                     cmd.Parameters.AddWithValue("@modified", modified);
-                    cmd.Parameters.AddWithValue("@hash", hash);
+                    cmd.Parameters.AddWithValue("@hash", (object)hash ?? DBNull.Value);
                     cmd.ExecuteNonQuery();
                 }
 
@@ -130,7 +131,7 @@ namespace hashfs
             });
         }
 
-        static void AddHashes(SQLiteConnection con, string path)
+        static void AddHashes(SqliteConnection con, string path)
         {
             var watch = Stopwatch.StartNew();
             var waitTime = 60 * 1000;
@@ -215,14 +216,14 @@ namespace hashfs
             Console.WriteLine($"Processed: {fileCount}: " + string.Join(" ", hashTypes.Select(i => i.ToString())));
         }
 
-        static void RemovePaths(SQLiteConnection con, IReadOnlyList<string> paths)
+        static void RemovePaths(SqliteConnection con, IReadOnlyList<string> paths)
         {
             var watch = Stopwatch.StartNew();
             Console.WriteLine($"Removing: {paths.Count}");
             long entries = 0;
             foreach (var path in paths)
             {
-                var rmCmd = new SQLiteCommand("DELETE FROM files WHERE path = @path", con);
+                var rmCmd = new SqliteCommand("DELETE FROM files WHERE path = @path", con);
                 rmCmd.Parameters.AddWithValue("@path", path);
                 rmCmd.ExecuteNonQuery();
 
@@ -243,12 +244,10 @@ namespace hashfs
                 children = new JArray(),
             });
 
-            using var con = new SQLiteConnection($@"URI=file:{path}");
+            using var con = new SqliteConnection($@"URI=file:{path}");
             con.Open();
 
-            using var cmd = new SQLiteCommand(con);
-
-            cmd.CommandText = @"SELECT * FROM files";
+            using var cmd = new SqliteCommand(@"SELECT * FROM files", con);
 
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -304,14 +303,15 @@ namespace hashfs
             }
 
             // Don't log out version if we're trying to make parsable json
-            Console.WriteLine("HashFS v0.3.7");
+            Console.WriteLine("HashFS v0.3.8");
 
             if (args.Length >= 1) path = args[0];
             if (args.Length >= 2) database = args[1];
 
-            var cs = $@"URI=file:{database}";
+            var cs = $@"Data Source=file:{database}";
 
-            using var con = new SQLiteConnection(cs);
+            using var con = new SqliteConnection(cs);
+            Console.WriteLine($"System SQLite version: {con.ServerVersion}");
             con.Open();
             InitializeDatabase(con);
             Cache = new ConcurrentDictionary<string, (long, string)>(ReadDatabase(con));

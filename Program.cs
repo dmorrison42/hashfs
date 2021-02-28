@@ -15,6 +15,8 @@ namespace hashfs
 {
     class Program
     {
+        private const int NOMINAL_WORKERS = 3;
+
         private static SHA256 Sha256 = SHA256.Create();
 
         private static string GetHash(string filename)
@@ -134,8 +136,8 @@ namespace hashfs
         static void AddHashes(SqliteConnection con, string path)
         {
             var watch = Stopwatch.StartNew();
-            var waitTime = 60 * 1000;
-            var maxWaitTime = 5 * 60 * 1000;
+            var waitTime = 10 * 60 * 1000;
+            var maxWaitTime = 30 * 60 * 1000;
             var runningItems = new List<(string Path, Stopwatch Stopwatch, Task Task)>();
 
             Task.Run(() =>
@@ -165,7 +167,7 @@ namespace hashfs
                         .Select(i => i.Task)
                         .Where(t => !t.IsCompleted)
                         .ToArray();
-                    if (active.Length <= 5)
+                    if (active.Length <= NOMINAL_WORKERS)
                     {
                         break;
                     }

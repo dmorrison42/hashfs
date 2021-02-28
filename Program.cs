@@ -145,7 +145,7 @@ namespace hashfs
                     var items = runningItems.ToArray();
                     foreach (var item in items)
                     {
-                        if (item.Stopwatch.Elapsed.TotalSeconds > waitTime)
+                        if (item.Stopwatch.Elapsed.TotalMilliseconds > waitTime)
                         {
                             Console.WriteLine($"Running ({item.Stopwatch.Elapsed}): {item.Path}");
                         }
@@ -161,7 +161,7 @@ namespace hashfs
                 while (true)
                 {
                     var active = runningItems
-                        .Where(i => i.Stopwatch.Elapsed.TotalSeconds < maxWaitTime)
+                        .Where(i => i.Stopwatch.Elapsed.TotalMilliseconds < maxWaitTime)
                         .Select(i => i.Task)
                         .Where(t => !t.IsCompleted)
                         .ToArray();
@@ -175,7 +175,6 @@ namespace hashfs
                         if (workers > 1)
                         {
                             Console.WriteLine($"Timed out waiting for worker ({runningItems.Count} workers).");
-                            // If you want more than min workers when apparently timed out, put logic here and break to get a new worker
                         }
                     }
                 }
@@ -197,7 +196,7 @@ namespace hashfs
                     {
                         // Times estimated, should be within seconds
                         item.Stopwatch.Stop();
-                        if (item.Stopwatch.Elapsed.TotalSeconds > waitTime)
+                        if (item.Stopwatch.Elapsed.TotalMilliseconds > waitTime)
                         {
                             Console.WriteLine($"Finished ({item.Stopwatch.Elapsed}): {item.Path}");
                         }
@@ -303,7 +302,7 @@ namespace hashfs
             }
 
             // Don't log out version if we're trying to make parsable json
-            Console.WriteLine("HashFS v0.3.8");
+            Console.WriteLine("HashFS v0.3.9");
 
             if (args.Length >= 1) path = args[0];
             if (args.Length >= 2) database = args[1];

@@ -304,7 +304,7 @@ namespace hashfs
             }
 
             // Don't log out version if we're trying to make parsable json
-            Console.WriteLine("HashFS v0.3.9");
+            Console.WriteLine("HashFS v0.3.10");
 
             if (args.Length >= 1) path = args[0];
             if (args.Length >= 2) database = args[1];

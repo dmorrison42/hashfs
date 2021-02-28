@@ -175,7 +175,7 @@ namespace hashfs
                         if (workers > 1)
                         {
                             Console.WriteLine($"Timed out waiting for worker ({runningItems.Count} workers).");
-                            break;
+                            // If you want more than min workers when apparently timed out, put logic here and break to get a new worker
                         }
                     }
                 }
